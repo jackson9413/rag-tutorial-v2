@@ -1,0 +1,39 @@
+<!-- enable user to upload PDF files and save it in the data folder -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chatbot</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+    <div class="chatbox">
+        <div class="header">
+            <h4>Chatbot</h4>
+        </div>
+        <div class="chatlogs" id="chatlogs">
+            <div class="chat self">
+                <div class="user-photo"></div>
+                <p class="chat-message">Hello, how can I help you today?</p>
+            </div>
+        </div>
+        <div class="chat-form">
+            <input type="file" id="fileInput" placeholder="Upload a file...">
+            <button id="upload">Upload</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+    <!-- save the file in the data folder -->
+    <script>
+        document.getElementById('upload').addEventListener('click', function() {
+            var file = document.getElementById('fileInput').files[0];
+            var formData = new FormData();
+            formData.append('file', file);
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+        });
+    </script>
+</body>
+</html>

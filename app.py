@@ -1,3 +1,13 @@
+# use flask to create a chatbot based on user input and model output
+# create embeddings based on the pdf files in the data folder
+# use the embeddings to create a database
+# query the database with user input
+# use the model to generate a response based on the query
+# display the response to the user
+
+from flask import Flask, request, render_template
+from langchain.prompts import ChatPromptTemplate
+from langchain_community.llms.ollama import Ollama
 import argparse
 import os
 import shutil
@@ -11,27 +21,49 @@ from langchain_community.vectorstores import Chroma
 CHROMA_PATH = "chroma"
 DATA_PATH = "data"
 
+PROMPT_TEMPLATE = """
+Answer the question based only on the following context:
 
-def main():
+{context}
 
-    # Check if the database should be cleared (using the --clear flag).
+---
+
+Answer the question based on the above context: {question}
+"""
+
+app = Flask(__name__)
+
+# # create a url route where user can upload a pdf file and the embeddings will be created based on the pdf file
+# # create a chroma database based on the embeddings
+
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    if request.method == "POST":
+        f = request.files["file"]
+        f.save(f"data/{f.filename}")
+        create_database_based_on_pdf_files()
+        return "File uploaded successfully"
+    return render_template("upload.html")
+
+# define a function to read the pdf files and create embeddings based on the pdf files
+# create a chroma database based on the embeddings
+def create_database_based_on_pdf_files():
+    # check if the database should be cleared (using the --clear flag).
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="Reset the database.")
     args = parser.parse_args()
     if args.reset:
         print("✨ Clearing Database")
         clear_database()
-
-    # Create (or update) the data store.
+    
+    # create (or update) the data store.
     documents = load_documents()
     chunks = split_documents(documents)
     add_to_chroma(chunks)
 
-
 def load_documents():
     document_loader = PyPDFDirectoryLoader(DATA_PATH)
     return document_loader.load()
-
 
 def split_documents(documents: list[Document]):
     text_splitter = RecursiveCharacterTextSplitter(
@@ -41,7 +73,6 @@ def split_documents(documents: list[Document]):
         is_separator_regex=False,
     )
     return text_splitter.split_documents(documents)
-
 
 def add_to_chroma(chunks: list[Document]):
     # Load the existing database.
@@ -71,9 +102,7 @@ def add_to_chroma(chunks: list[Document]):
     else:
         print("✅ No new documents to add")
 
-
 def calculate_chunk_ids(chunks):
-
     # This will create IDs like "data/monopoly.pdf:6:2"
     # Page Source : Page Number : Chunk Index
 
@@ -100,11 +129,47 @@ def calculate_chunk_ids(chunks):
 
     return chunks
 
-
 def clear_database():
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
+    os.makedirs(CHROMA_PATH)
+    
+
+
+def query_rag(query_text: str):
+    # Prepare the DB.
+    embedding_function = get_embedding_function()
+    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
+
+    # Search the DB.
+    results = db.similarity_search_with_score(query_text, k=5)
+
+    context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
+    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+    prompt = prompt_template.format(context=context_text, question=query_text)
+    # print(prompt)
+
+    model = Ollama(model="llama3.1")
+    response_text = model.invoke(prompt)
+
+    sources = [doc.metadata.get("id", None) for doc, _score in results]
+    formatted_response = f"Response: {response_text}\nSources: {sources}"
+    return formatted_response
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route("/get", methods=["GET", "POST"])
+def chatbot():
+    query_text = request.form["msg"]
+    response = query_rag(query_text)
+    return response
 
 
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)
+
+
+
